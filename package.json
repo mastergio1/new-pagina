@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "shots": "npm run build && node scripts/capture.mjs"
+    "shots": "npm run build && node scripts/capture.mjs",
+    "video": "npm run build && node scripts/record.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -28,7 +29,9 @@
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "gifenc": "^1.0.3",
     "globals": "^17.6.0",
+    "pngjs": "^7.0.0",
     "puppeteer": "^25.2.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
