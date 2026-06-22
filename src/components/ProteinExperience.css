@@ -1,0 +1,114 @@
+/* Runway de scroll: 400vh da recorrido para la secuencia cinematográfica. */
+.experience {
+  position: relative;
+  width: 100%;
+  height: 400vh;
+  background: #05070a;
+}
+
+/* El Canvas queda fijo en viewport mientras el contenedor hace scroll. */
+.experience__sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.experience__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* ----- Overlay tipográfico (microinteracciones de alta gama) ----- */
+.experience__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: clamp(24px, 6vh, 64px) 24px;
+  color: #eaf3ff;
+  text-align: center;
+}
+
+.experience__intro {
+  margin-top: clamp(40px, 12vh, 120px);
+  will-change: transform, opacity;
+}
+
+.experience__eyebrow {
+  margin: 0 0 18px;
+  font-size: clamp(10px, 1.1vw, 13px);
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(190, 224, 255, 0.7);
+}
+
+.experience__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: clamp(56px, 12vw, 168px);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+  color: #f4fbff;
+  text-shadow: 0 0 60px rgba(120, 190, 255, 0.25);
+}
+
+.experience__title span {
+  font-weight: 200;
+  color: rgba(174, 226, 255, 0.85);
+}
+
+.experience__sub {
+  margin: 22px auto 0;
+  max-width: 30ch;
+  font-size: clamp(13px, 1.4vw, 17px);
+  letter-spacing: 0.01em;
+  color: rgba(214, 232, 255, 0.72);
+}
+
+.experience__hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: rgba(190, 224, 255, 0.6);
+}
+
+.experience__hint-line {
+  width: 1px;
+  height: 56px;
+  background: linear-gradient(
+    to bottom,
+    rgba(190, 224, 255, 0.7),
+    rgba(190, 224, 255, 0)
+  );
+  animation: hint-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes hint-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+    opacity: 0.4;
+    transform-origin: top;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+    transform-origin: top;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .experience__hint-line {
+    animation: none;
+  }
+}
