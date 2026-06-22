@@ -36,14 +36,65 @@ type SharedRefs = {
 
 const PARTICLE_COUNT = 1800
 
+// Profundidad final de la cámara en el clímax. La usan tanto el CameraRig como
+// el túnel de partículas para proyectarse exactamente sobre el frustum.
+const STREAM_CAM_Z = 2.2
+
 /* Helper de remapeo de la fase de "release" (50% -> 100% del scroll). */
 const releasePhase = (s: number) => (s <= 0.5 ? 0 : (s - 0.5) / 0.5)
+
+/**
+ * Perfil 2D (mitad) de un cilindro con bordes superior/inferior redondeados,
+ * para revolucionarlo con <latheGeometry>. Da el look de "bote" con cantos
+ * suavizados que <cylinderGeometry> no puede producir (cantos a 90°).
+ */
+function roundedCylinderProfile(
+  radius: number,
+  height: number,
+  corner: number,
+  arc = 6,
+): THREE.Vector2[] {
+  const pts: THREE.Vector2[] = []
+  const hy = height / 2
+  pts.push(new THREE.Vector2(0, -hy)) // centro de la base
+  pts.push(new THREE.Vector2(radius - corner, -hy)) // base plana
+  // canto inferior redondeado (-90° -> 0°)
+  for (let i = 0; i <= arc; i++) {
+    const a = -Math.PI / 2 + (Math.PI / 2) * (i / arc)
+    pts.push(
+      new THREE.Vector2(
+        radius - corner + Math.cos(a) * corner,
+        -hy + corner + Math.sin(a) * corner,
+      ),
+    )
+  }
+  // canto superior redondeado (0° -> 90°)
+  for (let i = 0; i <= arc; i++) {
+    const a = (Math.PI / 2) * (i / arc)
+    pts.push(
+      new THREE.Vector2(
+        radius - corner + Math.cos(a) * corner,
+        hy - corner + Math.sin(a) * corner,
+      ),
+    )
+  }
+  pts.push(new THREE.Vector2(0, hy)) // centro de la tapa
+  return pts
+}
 
 /* -------------------------------------------------------------------------- */
 /* EL BOTE: cilindro de vidrio (glassmorphism de alta transmisión)            */
 /* -------------------------------------------------------------------------- */
 function ProteinJar({ scroll, pointer }: SharedRefs) {
   const group = useRef<THREE.Group>(null!)
+  const powderRef = useRef<THREE.MeshStandardMaterial>(null!)
+  const glassRef = useRef<THREE.MeshPhysicalMaterial>(null!)
+
+  // Perfil del bote calculado UNA vez (radio 1, alto 2.6, canto 0.18).
+  const bottleProfile = useMemo(
+    () => roundedCylinderProfile(1, 2.6, 0.18, 8),
+    [],
+  )
 
   useFrame((_, delta) => {
     const g = group.current
@@ -58,14 +109,26 @@ function ProteinJar({ scroll, pointer }: SharedRefs) {
     g.rotation.x = MathUtils.damp(g.rotation.x, tiltX, 5, delta)
     g.rotation.z = MathUtils.damp(g.rotation.z, -tiltY * 0.4, 5, delta)
     g.rotation.y = MathUtils.damp(g.rotation.y, spin + tiltY, 5, delta)
+
+    // 50% -> 100%: el polvo "se libera" -> brilla y se desvanece para que la
+    // cámara entre a un campo de partículas en vez de a una pared opaca.
+    const release = releasePhase(scroll.current)
+    powderRef.current.opacity = 1 - release
+    powderRef.current.emissiveIntensity = 0.25 + release * 1.8
+    // El vidrio se desvanece (y apaga su transmisión) para revelar el túnel
+    // de cristales al entrar, sin bandas oscuras de refracción.
+    glassRef.current.opacity = 1 - release
+    glassRef.current.transmission = 1 - release
   })
 
   return (
     <group ref={group}>
-      {/* Cuerpo de vidrio — MeshPhysicalMaterial, transmisión alta + rugosidad baja */}
+      {/* Cuerpo de vidrio con bordes redondeados (latheGeometry) —
+          MeshPhysicalMaterial, transmisión alta + rugosidad baja */}
       <mesh>
-        <cylinderGeometry args={[1, 1, 2.6, 96, 1, false]} />
+        <latheGeometry args={[bottleProfile, 96]} />
         <meshPhysicalMaterial
+          ref={glassRef}
           transmission={1}
           thickness={1.4}
           roughness={0.06}
@@ -76,18 +139,22 @@ function ProteinJar({ scroll, pointer }: SharedRefs) {
           color="#eaf7ff"
           attenuationColor="#aee2ff"
           attenuationDistance={2.4}
+          side={THREE.DoubleSide}
           transparent
         />
       </mesh>
 
-      {/* Núcleo de polvo liofilizado: le da contenido que refractar al vidrio */}
+      {/* Núcleo de polvo liofilizado: le da contenido que refractar al vidrio
+          y se desvanece en la fase de "liberación de nutrientes". */}
       <mesh position={[0, -0.55, 0]}>
         <cylinderGeometry args={[0.82, 0.82, 1.35, 64]} />
         <meshStandardMaterial
+          ref={powderRef}
           color="#f4eee2"
           roughness={0.92}
-          emissive="#241c12"
+          emissive="#9fd4ff"
           emissiveIntensity={0.25}
+          transparent
         />
       </mesh>
 
@@ -112,6 +179,23 @@ function ProteinJar({ scroll, pointer }: SharedRefs) {
 function IceParticles({ scroll }: Pick<SharedRefs, 'scroll'>) {
   const pointsRef = useRef<THREE.Points>(null!)
   const geomRef = useRef<THREE.BufferGeometry>(null!)
+  const matRef = useRef<THREE.PointsMaterial>(null!)
+
+  // Sprite radial suave (glint redondo) generado una vez — sin él los <points>
+  // se ven como cuadrados duros.
+  const sprite = useMemo(() => {
+    const s = 64
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = s
+    const ctx = canvas.getContext('2d')!
+    const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2)
+    g.addColorStop(0, 'rgba(255,255,255,1)')
+    g.addColorStop(0.25, 'rgba(223,244,255,0.85)')
+    g.addColorStop(1, 'rgba(223,244,255,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, s, s)
+    return new THREE.CanvasTexture(canvas)
+  }, [])
 
   // Buffers creados UNA sola vez. base = posiciones de reposo; live = buffer
   // que consume la geometría; seeds = [fase, velocidad, radio] por partícula.
@@ -136,26 +220,41 @@ function IceParticles({ scroll }: Pick<SharedRefs, 'scroll'>) {
     const t = state.clock.elapsedTime
     const release = releasePhase(scroll.current)
 
-    // 50% -> 100%: liberación de nutrientes -> aceleran y se expanden a pantalla.
-    const speed = 1 + release * 7
-    const expand = 1 + release * release * 5
-    const towardCamera = release * release * 7
-
     const arr = geomRef.current.attributes.position.array as Float32Array
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const i3 = i * 3
       const phase = seeds[i3]
       const sp = seeds[i3 + 1]
-      const radius = seeds[i3 + 2] * expand
-      const angle = phase + t * sp * 0.25 * speed
+      const radius = seeds[i3 + 2]
 
-      arr[i3] = Math.cos(angle) * radius
-      arr[i3 + 1] = base[i3 + 1] + Math.sin(t * sp + phase) * 0.35
-      arr[i3 + 2] =
-        Math.sin(angle) * radius + towardCamera * (0.5 + 0.5 * Math.sin(phase * 3))
+      // --- CALMA (0-50%): órbita cilíndrica suave alrededor del bote ---
+      const angle = phase + t * sp * 0.25
+      const ox = Math.cos(angle) * radius
+      const oy = base[i3 + 1] + Math.sin(t * sp + phase) * 0.35
+      const oz = Math.sin(angle) * radius
+
+      // --- RELEASE (50-100%): túnel proyectado al frustum, fluyendo a cámara ---
+      // Coordenadas de pantalla fijas por partícula (de su semilla base).
+      const sxNorm = base[i3] / 3.9
+      const syNorm = base[i3 + 1] / 2.75
+      // Cada partícula viaja de lejos hacia la cámara y recicla (sin acercarse
+      // tanto que llene la pantalla de un solo cristal).
+      const cycle = (t * sp * 0.16 + phase) % 1
+      const dist = 1.3 + (1 - cycle) * 5 // banda cercana => denso y con cuerpo
+      // x/y escalan con la distancia => se mantienen fijas en pantalla = warp.
+      const sx = sxNorm * 0.55 * dist
+      const sy = syNorm * 0.34 * dist
+      const sz = STREAM_CAM_Z - dist
+
+      arr[i3] = MathUtils.lerp(ox, sx, release)
+      arr[i3 + 1] = MathUtils.lerp(oy, sy, release)
+      arr[i3 + 2] = MathUtils.lerp(oz, sz, release)
     }
     geomRef.current.attributes.position.needsUpdate = true
-    pointsRef.current.rotation.y = t * 0.03
+
+    // Cristales algo más grandes y brillantes según se liberan.
+    matRef.current.size = 0.06 + release * 0.03
+    matRef.current.opacity = 0.7 + release * 0.2
   })
 
   return (
@@ -164,10 +263,12 @@ function IceParticles({ scroll }: Pick<SharedRefs, 'scroll'>) {
         <bufferAttribute attach="attributes-position" args={[live, 3]} />
       </bufferGeometry>
       <pointsMaterial
-        size={0.035}
+        ref={matRef}
+        map={sprite}
+        size={0.06}
         sizeAttenuation
         transparent
-        opacity={0.85}
+        opacity={0.7}
         depthWrite={false}
         color="#dff4ff"
         blending={THREE.AdditiveBlending}
@@ -185,9 +286,10 @@ function CameraRig({ scroll }: Pick<SharedRefs, 'scroll'>) {
 
   useFrame((_, delta) => {
     const eased = releasePhase(scroll.current) ** 2 // ease-in agresivo
-    const targetZ = MathUtils.lerp(6, 0.35, eased) // de fuera -> dentro del bote
+    const targetZ = MathUtils.lerp(6, STREAM_CAM_Z, eased) // empuje agresivo al bote
     camera.position.z = MathUtils.damp(camera.position.z, targetZ, 6, delta)
-    camera.position.y = MathUtils.damp(camera.position.y, eased * 0.6, 6, delta)
+    // Mantener el eje de visión sobre Z para que el túnel quede centrado.
+    camera.position.y = MathUtils.damp(camera.position.y, 0, 6, delta)
     camera.lookAt(lookTarget)
   })
   return null
